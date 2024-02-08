@@ -1,12 +1,6 @@
-region = "us-east-2"
-
-namespace = "eg"
-
+region      = "us-east-2"
+namespace   = "eg"
 environment = "ue2"
-
-stage = "test"
-
-name = "example"
-
-example_input = "Hello, world!"
-
+stage       = "test"
+name        = "example"
+attributes  = ["some", "thing"]
