@@ -11,7 +11,7 @@ resource "aws_ssm_parameter" "write_kv_pair" {
 }
 
 data "aws_ssm_parameter" "read_kv_pair" {
-  for_each = local.ssm_enabled ? local.vals_to_write : {}
+  for_each = local.ssm_enabled ? local.vals_to_read : {}
 
   name = each.key
 }
