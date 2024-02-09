@@ -5,7 +5,29 @@ variable "key_prefix" {
   default     = ""
 }
 
-variable "read" {
+variable "get" {
+  description = <<-EOT
+    A map of keys to read from the key/value store. The key_path, namespace,
+    tenant, stage, environment, and name are derived from context by default,
+    but can be overridden by specifying a value in the map.
+    EOT
+  type = map(object(
+    {
+      key_path    = optional(string),
+      namespace   = optional(string),
+      tenant      = optional(string),
+      stage       = optional(string),
+      environment = optional(string),
+      name        = optional(string),
+      attributes  = optional(list(string))
+    }
+    )
+  )
+  default  = {}
+  nullable = false
+}
+
+variable "get_by_path" {
   description = <<-EOT
     A map of keys to read from the key/value store. The key_path, namespace,
     tenant, stage, environment, and name are derived from context by default,
@@ -33,7 +55,7 @@ variable "ssm_enabled" {
   default     = true
 }
 
-variable "write" {
+variable "set" {
   description = <<-EOT
   A map of key-value pairs to write to the key/value store. The key_path,
   namespace, tenant, stage, environment, and name are derived from context by

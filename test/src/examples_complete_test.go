@@ -1,6 +1,7 @@
 package test
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -16,9 +17,10 @@ func cleanup(t *testing.T, terraformOptions *terraform.Options, tempTestFolder s
 	os.RemoveAll(tempTestFolder)
 }
 
-// Test the Terraform module in examples/complete using Terratest.
 func TestExamplesComplete(t *testing.T) {
 	t.Parallel()
+
+	// Generate a random ID to prevent naming conflicts
 	randID := strings.ToLower(random.UniqueId())
 	attributes := []string{randID}
 
@@ -36,21 +38,66 @@ func TestExamplesComplete(t *testing.T) {
 		VarFiles: varFiles,
 		Vars: map[string]interface{}{
 			"attributes": attributes,
+			"key_prefix": fmt.Sprintf("/%s", randID),
+			"set": map[string]interface{}{
+				"mykey": map[string]interface{}{
+					"value":     "myval",
+					"sensitive": false,
+				},
+				"mytreekey": map[string]interface{}{
+					"key_path":  fmt.Sprintf("/%s/well-known/foo/key1", randID),
+					"value":     "key1val",
+					"sensitive": false,
+				},
+				"mytreekey2": map[string]interface{}{
+					"key_path":  fmt.Sprintf("/%s/well-known/foo/key2", randID),
+					"value":     "key2val",
+					"sensitive": false,
+				},
+				"mytreekey3": map[string]interface{}{
+					"key_path":  fmt.Sprintf("/%s/well-known/foo/key3", randID),
+					"value":     "key3val",
+					"sensitive": false,
+				},
+			},
 		},
 	}
 
 	// At the end of the test, run `terraform destroy` to clean up any resources that were created
 	defer cleanup(t, terraformOptions, tempTestFolder)
-
-	// This will run `terraform init` and `terraform apply` and fail the test if there are any errors
 	terraform.InitAndApply(t, terraformOptions)
 
+	// Now use a different set of options to test that we can get the values written in the previous step
+	tempGetTestFolder := testStructure.CopyTerraformFolderToTemp(t, rootFolder, terraformFolderRelativeToRoot)
+	terraformGetOptions := &terraform.Options{
+		TerraformDir: tempGetTestFolder,
+		Upgrade:      true,
+		VarFiles:     varFiles,
+		Vars: map[string]interface{}{
+			"attributes": attributes,
+			"key_prefix": fmt.Sprintf("/%s", randID),
+			"get": map[string]interface{}{
+				"mykey": map[string]interface{}{},
+			},
+			"get_by_path": map[string]interface{}{
+				"mytreekey": map[string]interface{}{
+					"key_path": fmt.Sprintf("/%s/well-known/foo", randID),
+				},
+			},
+		},
+	}
+
+	defer cleanup(t, terraformGetOptions, tempGetTestFolder)
+	terraform.InitAndApply(t, terraformGetOptions)
+
 	// Run `terraform output` to get the value of an output variable
-	id := terraform.Output(t, terraformOptions, "id")
+	values := terraform.OutputMapOfObjects(t, terraformGetOptions, "values")
 
-	// Ensure we get the attribute included in the ID
-	assert.Equal(t, "eg-ue2-test-example-"+randID, id)
-
+	// Ensure we get the values back from the k/v store
+	assert.Equal(t, "myval", values["mykey"])
+	assert.Equal(t, "key1val", values["mytreekey"].(map[string]interface{})[fmt.Sprintf("/%s/well-known/foo/key1", randID)])
+	assert.Equal(t, "key2val", values["mytreekey"].(map[string]interface{})[fmt.Sprintf("/%s/well-known/foo/key2", randID)])
+	assert.Equal(t, "key3val", values["mytreekey"].(map[string]interface{})[fmt.Sprintf("/%s/well-known/foo/key3", randID)])
 }
 
 func TestExamplesCompleteDisabled(t *testing.T) {
