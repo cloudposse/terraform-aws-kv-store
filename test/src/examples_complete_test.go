@@ -1,124 +1,134 @@
 package test
 
 import (
-  "os"
-  "strings"
-  "testing"
+	"fmt"
+	"os"
+	"strings"
+	"testing"
 
-  "github.com/gruntwork-io/terratest/modules/random"
-  "github.com/gruntwork-io/terratest/modules/terraform"
-  testStructure "github.com/gruntwork-io/terratest/modules/test-structure"
-  "github.com/stretchr/testify/assert"
+	"github.com/gruntwork-io/terratest/modules/random"
+	"github.com/gruntwork-io/terratest/modules/terraform"
+	testStructure "github.com/gruntwork-io/terratest/modules/test-structure"
+	"github.com/stretchr/testify/assert"
 )
 
 func cleanup(t *testing.T, terraformOptions *terraform.Options, tempTestFolder string) {
-  terraform.Destroy(t, terraformOptions)
-  os.RemoveAll(tempTestFolder)
+	terraform.Destroy(t, terraformOptions)
+	os.RemoveAll(tempTestFolder)
 }
 
-// Test the Terraform module in examples/complete using Terratest.
 func TestExamplesComplete(t *testing.T) {
-  t.Parallel()
-  randID := strings.ToLower(random.UniqueId())
-  attributes := []string{randID}
+	t.Parallel()
 
-  rootFolder := "../../"
-  terraformFolderRelativeToRoot := "examples/complete"
-  varFiles := []string{"fixtures.us-east-2.tfvars"}
+	// Generate a random ID to prevent naming conflicts
+	randID := strings.ToLower(random.UniqueId())
+	attributes := []string{randID}
 
-  tempTestFolder := testStructure.CopyTerraformFolderToTemp(t, rootFolder, terraformFolderRelativeToRoot)
+	rootFolder := "../../"
+	terraformFolderRelativeToRoot := "examples/complete"
+	varFiles := []string{"fixtures.us-east-2.tfvars"}
 
-  terraformOptions := &terraform.Options{
-    // The path to where our Terraform code is located
-    TerraformDir: tempTestFolder,
-    Upgrade:      true,
-    // Variables to pass to our Terraform code using -var-file options
-    VarFiles: varFiles,
-    Vars: map[string]interface{}{
-      "attributes": attributes,
-    },
-  }
+	tempTestFolder := testStructure.CopyTerraformFolderToTemp(t, rootFolder, terraformFolderRelativeToRoot)
 
-  // At the end of the test, run `terraform destroy` to clean up any resources that were created
-  defer cleanup(t, terraformOptions, tempTestFolder)
+	terraformOptions := &terraform.Options{
+		// The path to where our Terraform code is located
+		TerraformDir: tempTestFolder,
+		Upgrade:      true,
+		// Variables to pass to our Terraform code using -var-file options
+		VarFiles: varFiles,
+		Vars: map[string]interface{}{
+			"attributes": attributes,
+			"key_prefix": fmt.Sprintf("/%s", randID),
+			"set": map[string]interface{}{
+				"mykey": map[string]interface{}{
+					"value":     "myval",
+					"sensitive": false,
+				},
+				"mytreekey": map[string]interface{}{
+					"key_path":  fmt.Sprintf("/%s/well-known/foo/key1", randID),
+					"value":     "key1val",
+					"sensitive": false,
+				},
+				"mytreekey2": map[string]interface{}{
+					"key_path":  fmt.Sprintf("/%s/well-known/foo/key2", randID),
+					"value":     "key2val",
+					"sensitive": false,
+				},
+				"mytreekey3": map[string]interface{}{
+					"key_path":  fmt.Sprintf("/%s/well-known/foo/key3", randID),
+					"value":     "key3val",
+					"sensitive": false,
+				},
+			},
+		},
+	}
 
-  // This will run `terraform init` and `terraform apply` and fail the test if there are any errors
-  terraform.InitAndApply(t, terraformOptions)
+	// At the end of the test, run `terraform destroy` to clean up any resources that were created
+	defer cleanup(t, terraformOptions, tempTestFolder)
+	terraform.InitAndApply(t, terraformOptions)
 
-  expectedExampleInput := "Hello, world!"
+	// Now use a different set of options to test that we can get the values written in the previous step
+	tempGetTestFolder := testStructure.CopyTerraformFolderToTemp(t, rootFolder, terraformFolderRelativeToRoot)
+	terraformGetOptions := &terraform.Options{
+		TerraformDir: tempGetTestFolder,
+		Upgrade:      true,
+		VarFiles:     varFiles,
+		Vars: map[string]interface{}{
+			"attributes": attributes,
+			"key_prefix": fmt.Sprintf("/%s", randID),
+			"get": map[string]interface{}{
+				"mykey": map[string]interface{}{},
+			},
+			"get_by_path": map[string]interface{}{
+				"mytreekey": map[string]interface{}{
+					"key_path": fmt.Sprintf("/%s/well-known/foo", randID),
+				},
+			},
+		},
+	}
 
-  // Run `terraform output` to get the value of an output variable
-  id := terraform.Output(t, terraformOptions, "id")
-  example := terraform.Output(t, terraformOptions, "example")
-  random := terraform.Output(t, terraformOptions, "random")
+	defer cleanup(t, terraformGetOptions, tempGetTestFolder)
+	terraform.InitAndApply(t, terraformGetOptions)
 
-  // Verify we're getting back the outputs we expect
-  // Ensure we get a random number appended
-  assert.Equal(t, expectedExampleInput+" "+random, example)
-  // Ensure we get the attribute included in the ID
-  assert.Equal(t, "eg-ue2-test-example-"+randID, id)
+	// Run `terraform output` to get the value of an output variable
+	values := terraform.OutputMapOfObjects(t, terraformGetOptions, "values")
 
-  // ************************************************************************
-  // This steps below are unusual, not generally part of the testing
-  // but included here as an example of testing this specific module.
-  // This module has a random number that is supposed to change
-  // only when the example changes. So we run it again to ensure
-  // it does not change.
-
-  // This will run `terraform apply` a second time and fail the test if there are any errors
-  terraform.Apply(t, terraformOptions)
-
-  id2 := terraform.Output(t, terraformOptions, "id")
-  example2 := terraform.Output(t, terraformOptions, "example")
-  random2 := terraform.Output(t, terraformOptions, "random")
-
-  assert.Equal(t, id, id2, "Expected `id` to be stable")
-  assert.Equal(t, example, example2, "Expected `example` to be stable")
-  assert.Equal(t, random, random2, "Expected `random` to be stable")
-
-  // Then we run change the example and run it a third time and
-  // verify that the random number changed
-  newExample := "Goodbye"
-  terraformOptions.Vars["example_input_override"] = newExample
-  terraform.Apply(t, terraformOptions)
-
-  example3 := terraform.Output(t, terraformOptions, "example")
-  random3 := terraform.Output(t, terraformOptions, "random")
-
-  assert.NotEqual(t, random, random3, "Expected `random` to change when `example` changed")
-  assert.Equal(t, newExample+" "+random3, example3, "Expected `example` to use new random number")
-
+	// Ensure we get the values back from the k/v store
+	assert.Equal(t, "myval", values["mykey"])
+	assert.Equal(t, "key1val", values["mytreekey"].(map[string]interface{})[fmt.Sprintf("/%s/well-known/foo/key1", randID)])
+	assert.Equal(t, "key2val", values["mytreekey"].(map[string]interface{})[fmt.Sprintf("/%s/well-known/foo/key2", randID)])
+	assert.Equal(t, "key3val", values["mytreekey"].(map[string]interface{})[fmt.Sprintf("/%s/well-known/foo/key3", randID)])
 }
 
 func TestExamplesCompleteDisabled(t *testing.T) {
-  t.Parallel()
-  randID := strings.ToLower(random.UniqueId())
-  attributes := []string{randID}
+	t.Parallel()
+	randID := strings.ToLower(random.UniqueId())
+	attributes := []string{randID}
 
-  rootFolder := "../../"
-  terraformFolderRelativeToRoot := "examples/complete"
-  varFiles := []string{"fixtures.us-east-2.tfvars"}
+	rootFolder := "../../"
+	terraformFolderRelativeToRoot := "examples/complete"
+	varFiles := []string{"fixtures.us-east-2.tfvars"}
 
-  tempTestFolder := testStructure.CopyTerraformFolderToTemp(t, rootFolder, terraformFolderRelativeToRoot)
+	tempTestFolder := testStructure.CopyTerraformFolderToTemp(t, rootFolder, terraformFolderRelativeToRoot)
 
-  terraformOptions := &terraform.Options{
-    // The path to where our Terraform code is located
-    TerraformDir: tempTestFolder,
-    Upgrade:      true,
-    // Variables to pass to our Terraform code using -var-file options
-    VarFiles: varFiles,
-    Vars: map[string]interface{}{
-      "attributes": attributes,
-      "enabled":    "false",
-    },
-  }
+	terraformOptions := &terraform.Options{
+		// The path to where our Terraform code is located
+		TerraformDir: tempTestFolder,
+		Upgrade:      true,
+		// Variables to pass to our Terraform code using -var-file options
+		VarFiles: varFiles,
+		Vars: map[string]interface{}{
+			"attributes": attributes,
+			"enabled":    "false",
+		},
+	}
 
-  // At the end of the test, run `terraform destroy` to clean up any resources that were created
-  defer cleanup(t, terraformOptions, tempTestFolder)
+	// At the end of the test, run `terraform destroy` to clean up any resources that were created
+	defer cleanup(t, terraformOptions, tempTestFolder)
 
-  // This will run `terraform init` and `terraform apply` and fail the test if there are any errors
-  results := terraform.InitAndApply(t, terraformOptions)
+	// This will run `terraform init` and `terraform apply` and fail the test if there are any errors
+	results := terraform.InitAndApply(t, terraformOptions)
 
-  // Should complete successfully without creating or changing any resources
-  assert.Contains(t, results, "Resources: 0 added, 0 changed, 0 destroyed.")
+	// Should complete successfully without creating or changing any resources
+	assert.Contains(t, results, "Resources: 0 added, 0 changed, 0 destroyed.")
 }
