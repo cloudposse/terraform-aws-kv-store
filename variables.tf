@@ -23,7 +23,9 @@ variable "get" {
     }
     )
   )
-  default  = {}
+  default = {
+    myval = { stage = "root" }
+  }
   nullable = false
 }
 
