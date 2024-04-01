@@ -1,0 +1,7 @@
+# Upstream changes from _extends are only recognized when modifications are made to this file in the default branch.
+_extends: .github
+repository:
+  name: terraform-aws-kv-store
+  description: A context-aware key/value store with swappable backends
+  homepage: https://cloudposse.com/accelerate
+  topics: ""
