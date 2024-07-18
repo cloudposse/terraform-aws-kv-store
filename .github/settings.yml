@@ -5,3 +5,4 @@ repository:
   description: A context-aware key/value store with swappable backends
   homepage: https://cloudposse.com/accelerate
   topics: ""
+
